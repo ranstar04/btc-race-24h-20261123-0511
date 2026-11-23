@@ -11,8 +11,8 @@ Entry for [Race a BTC trading bot live for 24 hours](https://make.fun/bounty/btc
 One-minute BTC prices are mostly noise (about 8 bps of jitter per bar) on top of a slow drift, and a full round trip costs roughly 25–45 bps in fees, slippage and pool impact. Fast EMA-cross and momentum bots backtested on the frozen dev window all lost $50–$200, while buy-and-hold made about +$32. So PeakTrail trades rarely:
 
 - **Buy all $1,000 on the first tradeable bar** — waiting for a slow EMA cross costs more in missed drift than it saves in avoided early dips.
-- **Ride with a 1.25% trailing stop** from the highest close seen so far — a stop-out locks in most of a rise and caps a fall at about 1.25% plus costs.
-- **Re-enter only on a genuine new high**: a close above the peak that triggered the exit, with the 30-bar EMA above the 120-bar EMA, after at least 30 bars of cooling off, and never in the final 60 bars.
+- **Ride with a 1.25% trailing stop** from the highest close seen so far — a stop-out locks in most of a rise and caps a fall at about 1.25% plus costs. Once the position is up 3% from its entry, the stop widens to 2% so a winner is not shaken out by ordinary 1-minute noise on the way up.
+- **Re-enter only on a genuine new high**: a close above the peak that triggered the exit, with the price above the 120-bar EMA and the 30-bar EMA above the 120-bar EMA, after at least 30 bars of cooling off, and never in the final 60 bars.
 
 Long only, one position, a handful of trades per day, no leverage, no shorts, no randomness, no clock, no network. Deterministic: two runs on the same data produce the same orders.
 

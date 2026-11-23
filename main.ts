@@ -27,6 +27,8 @@ import type { BarsState, OrderInput } from "./vendor/makefun-bars.ts";
 const SYMBOL = "CBBTC";
 const MAX_SLIPPAGE_BPS = 500;
 const STOP_BPS = 125; // trailing stop: 1.25% below the peak close
+const STOP_BPS_WIDE = 200; // wider 2% stop once the position is up 3%+
+const WINNER_GAIN_BPS = 300; // unrealised gain above which the stop widens
 const COOLDOWN_BARS = 30; // bars to wait after a stop-out before re-entering
 const NO_NEW_ENTRY_AFTER_SEQ = 1380; // final 60 bars: ride or sit, do not start a trade
 const EMA_FAST = 30;
@@ -35,6 +37,7 @@ const EMA_SLOW = 120;
 let emaFast: number | null = null;
 let emaSlow: number | null = null;
 let peakClose = 0; // highest close seen while long (USDC, as a float)
+let entryClose = 0; // close at which the current position was decided
 let exitPeak = 0; // peak close that triggered the last stop-out
 let lastExitSeq = -1000000;
 let enteredOnce = false;
@@ -64,12 +67,18 @@ await runBars({
     const qty = held === undefined ? 0n : held.qty;
 
     if (qty > 0n) {
-      // Long: trail the peak and sell everything on a 1.25% pullback.
+      // Long: trail the peak and sell everything on a pullback. Once the
+      // position is up 3% from its entry close, let the winner run with a
+      // wider 2% stop instead of being shaken out by ordinary 1-minute
+      // noise on the way up.
       if (price > peakClose) peakClose = price;
-      const stopPrice = (peakClose * (10000 - STOP_BPS)) / 10000;
+      const wide = entryClose > 0 && price > (entryClose * (10000 + WINNER_GAIN_BPS)) / 10000;
+      const stopBps = wide ? STOP_BPS_WIDE : STOP_BPS;
+      const stopPrice = (peakClose * (10000 - stopBps)) / 10000;
       if (price < stopPrice) {
         exitPeak = peakClose;
         lastExitSeq = state.seq;
+        entryClose = 0;
         return [{ side: "sell", symbol: SYMBOL, qty, max_slippage_bps: MAX_SLIPPAGE_BPS }];
       }
       return [];
@@ -82,19 +91,25 @@ await runBars({
       // avoided early dips, and the trailing stop bounds the downside.
       enteredOnce = true;
       peakClose = price;
+      entryClose = price;
       if (state.cash > 1000000n) {
         return [{ side: "buy", symbol: SYMBOL, notional_quote_units: state.cash, max_slippage_bps: MAX_SLIPPAGE_BPS }];
       }
       return [];
     }
 
-    // Re-entry only on a confirmed new high after cooling off.
+    // Re-entry only on a confirmed new high after cooling off, with the
+    // price itself above the slow EMA as well as the fast EMA above it:
+    // a new high printed while the price is still below its 120-bar
+    // average is a dead-cat bounce, not a resumed trend.
     if (state.seq - lastExitSeq < COOLDOWN_BARS) return [];
     if (state.seq >= NO_NEW_ENTRY_AFTER_SEQ) return [];
     if (exitPeak <= 0) return [];
     if (price <= exitPeak) return [];
     if (emaFast === null || emaSlow === null || emaFast <= emaSlow) return [];
+    if (price <= emaSlow) return [];
     peakClose = price;
+    entryClose = price;
     if (state.cash > 1000000n) {
       return [{ side: "buy", symbol: SYMBOL, notional_quote_units: state.cash, max_slippage_bps: MAX_SLIPPAGE_BPS }];
     }
